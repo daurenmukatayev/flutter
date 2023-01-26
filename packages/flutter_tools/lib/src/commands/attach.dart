@@ -12,14 +12,17 @@ import '../base/common.dart';
 import '../base/context.dart';
 import '../base/file_system.dart';
 import '../base/io.dart';
-import  '../build_info.dart';
+import '../base/logger.dart';
+import '../base/platform.dart';
+import '../base/signals.dart';
+import '../base/terminal.dart';
+import '../build_info.dart';
 import '../commands/daemon.dart';
 import '../compile.dart';
 import '../daemon.dart';
 import '../device.dart';
 import '../device_port_forwarder.dart';
 import '../fuchsia/fuchsia_device.dart';
-import '../globals.dart' as globals;
 import '../ios/devices.dart';
 import '../ios/simulators.dart';
 import '../macos/macos_ipad_device.dart';
@@ -58,7 +61,26 @@ import '../vmservice.dart';
 /// To attach to a flutter mod running on a fuchsia device, `--module` must
 /// also be provided.
 class AttachCommand extends FlutterCommand {
-  AttachCommand({bool verboseHelp = false, this.hotRunnerFactory}) {
+  AttachCommand({
+    bool verboseHelp = false,
+    HotRunnerFactory? hotRunnerFactory,
+    required Artifacts? artifacts,
+    required Stdio stdio,
+    required Logger logger,
+    required Terminal terminal,
+    required Signals signals,
+    required Platform platform,
+    required ProcessInfo processInfo,
+    required FileSystem fileSystem,
+  })  : _artifacts = artifacts,
+        _hotRunnerFactory = hotRunnerFactory ?? HotRunnerFactory(),
+        _stdio = stdio,
+        _logger = logger,
+        _terminal = terminal,
+        _signals = signals,
+        _platform = platform,
+        _processInfo = processInfo,
+        _fileSystem = fileSystem {
     addBuildModeFlags(verboseHelp: verboseHelp, defaultToRelease: false, excludeRelease: true);
     usesTargetOption();
     usesPortOptions(verboseHelp: verboseHelp);
@@ -75,52 +97,66 @@ class AttachCommand extends FlutterCommand {
         'debug-port',
         hide: !verboseHelp,
         help: '(deprecated) Device port where the observatory is listening. Requires '
-              '"--disable-service-auth-codes" to also be provided to the Flutter '
-              'application at launch, otherwise this command will fail to connect to '
-              'the application. In general, "--debug-url" should be used instead.',
-      )..addOption(
+            '"--disable-service-auth-codes" to also be provided to the Flutter '
+            'application at launch, otherwise this command will fail to connect to '
+            'the application. In general, "--debug-url" should be used instead.',
+      )
+      ..addOption(
         'debug-url',
-        aliases: <String>[ 'debug-uri' ], // supported for historical reasons
+        aliases: <String>['debug-uri'], // supported for historical reasons
         help: 'The URL at which the observatory is listening.',
-      )..addOption(
+      )
+      ..addOption(
         'app-id',
         help: 'The package name (Android) or bundle identifier (iOS) for the app. '
-              'This can be specified to avoid being prompted if multiple observatory ports '
-              'are advertised.\n'
-              'If you have multiple devices or emulators running, you should include the '
-              'device hostname as well, e.g. "com.example.myApp@my-iphone".\n'
-              'This parameter is case-insensitive.',
-      )..addOption(
+            'This can be specified to avoid being prompted if multiple observatory ports '
+            'are advertised.\n'
+            'If you have multiple devices or emulators running, you should include the '
+            'device hostname as well, e.g. "com.example.myApp@my-iphone".\n'
+            'This parameter is case-insensitive.',
+      )
+      ..addOption(
         'pid-file',
         help: 'Specify a file to write the process ID to. '
-              'You can send SIGUSR1 to trigger a hot reload '
-              'and SIGUSR2 to trigger a hot restart. '
-              'The file is created when the signal handlers '
-              'are hooked and deleted when they are removed.',
-      )..addFlag(
+            'You can send SIGUSR1 to trigger a hot reload '
+            'and SIGUSR2 to trigger a hot restart. '
+            'The file is created when the signal handlers '
+            'are hooked and deleted when they are removed.',
+      )
+      ..addFlag(
         'report-ready',
         help: 'Print "ready" to the console after handling a keyboard command.\n'
-              'This is primarily useful for tests and other automation, but consider '
-              'using "--machine" instead.',
+            'This is primarily useful for tests and other automation, but consider '
+            'using "--machine" instead.',
         hide: !verboseHelp,
-      )..addOption(
+      )
+      ..addOption(
         'project-root',
         hide: !verboseHelp,
         help: 'Normally used only in run target.',
-      )..addFlag('machine',
+      )
+      ..addFlag(
+        'machine',
         hide: !verboseHelp,
         negatable: false,
         help: 'Handle machine structured JSON command input and provide output '
-              'and progress in machine-friendly format.',
+            'and progress in machine-friendly format.',
       );
     usesTrackWidgetCreation(verboseHelp: verboseHelp);
     addDdsOptions(verboseHelp: verboseHelp);
     addDevToolsOptions(verboseHelp: verboseHelp);
     usesDeviceTimeoutOption();
-    hotRunnerFactory ??= HotRunnerFactory();
   }
 
-  HotRunnerFactory? hotRunnerFactory;
+  final HotRunnerFactory _hotRunnerFactory;
+  final Artifacts? _artifacts;
+  final Stdio _stdio;
+  final Logger _logger;
+  final Terminal _terminal;
+  final Signals _signals;
+  final Platform _platform;
+  final ProcessInfo _processInfo;
+  final FileSystem _fileSystem;
 
   @override
   final String name = 'attach';
@@ -199,8 +235,7 @@ known, it can be explicitly provided to attach via the command-line, e.g.
       );
     }
     if (debugPort != null && debugUri != null) {
-      throwToolExit(
-        'Either --debugPort or --debugUri can be provided, not both.');
+      throwToolExit('Either --debugPort or --debugUri can be provided, not both.');
     }
 
     if (userIdentifier != null) {
@@ -221,7 +256,11 @@ known, it can be explicitly provided to attach via the command-line, e.g.
       throwToolExit('Did not find any valid target devices.');
     }
 
-    final Artifacts? overrideArtifacts = device.artifactOverrides ?? globals.artifacts;
+    if (device == null) {
+      throwToolExit('Did not find any valid target devices.');
+    }
+
+    final Artifacts? overrideArtifacts = device.artifactOverrides ?? _artifacts;
     await context.run<void>(
       body: () => _attachToDevice(device),
       overrides: <Type, Generator>{
@@ -236,17 +275,16 @@ known, it can be explicitly provided to attach via the command-line, e.g.
     final FlutterProject flutterProject = FlutterProject.current();
 
     final Daemon? daemon = boolArgDeprecated('machine')
-      ? Daemon(
-          DaemonConnection(
-            daemonStreams: DaemonStreams.fromStdio(globals.stdio, logger: globals.logger),
-            logger: globals.logger,
-          ),
-          notifyingLogger: (globals.logger is NotifyingLogger)
-            ? globals.logger as NotifyingLogger
-            : NotifyingLogger(verbose: globals.logger.isVerbose, parent: globals.logger),
-          logToStdout: true,
-        )
-      : null;
+        ? Daemon(
+            DaemonConnection(
+              daemonStreams: DaemonStreams.fromStdio(_stdio, logger: _logger),
+              logger: _logger,
+            ),
+            notifyingLogger:
+                (_logger is NotifyingLogger) ? _logger as NotifyingLogger : NotifyingLogger(verbose: _logger.isVerbose, parent: _logger),
+            logToStdout: true,
+          )
+        : null;
 
     Stream<Uri>? observatoryUri;
     bool usesIpv6 = ipv6!;
@@ -274,49 +312,42 @@ known, it can be explicitly provided to attach via the command-line, e.g.
           rethrow;
         }
       } else if ((device is IOSDevice) || (device is IOSSimulator) || (device is MacOSDesignedForIPadDevice)) {
-        final Uri? uriFromMdns =
-          await MDnsObservatoryDiscovery.instance!.getObservatoryUri(
-            appId,
-            device,
-            usesIpv6: usesIpv6,
-            deviceVmservicePort: deviceVmservicePort,
-          );
-        observatoryUri = uriFromMdns == null
-          ? null
-          : Stream<Uri>.value(uriFromMdns).asBroadcastStream();
+        final Uri? uriFromMdns = await MDnsObservatoryDiscovery.instance!.getObservatoryUri(
+          appId,
+          device,
+          usesIpv6: usesIpv6,
+          deviceVmservicePort: deviceVmservicePort,
+        );
+        observatoryUri = uriFromMdns == null ? null : Stream<Uri>.value(uriFromMdns).asBroadcastStream();
       }
       // If MDNS discovery fails or we're not on iOS, fallback to ProtocolDiscovery.
       if (observatoryUri == null) {
-        final ProtocolDiscovery observatoryDiscovery =
-          ProtocolDiscovery.observatory(
-            // If it's an Android device, attaching relies on past log searching
-            // to find the service protocol.
-            await device.getLogReader(includePastLogs: device is AndroidDevice),
-            portForwarder: device.portForwarder,
-            ipv6: ipv6!,
-            devicePort: deviceVmservicePort,
-            hostPort: hostVmservicePort,
-            logger: globals.logger,
-          );
-        globals.printStatus('Waiting for a connection from Flutter on ${device.name}...');
+        final ProtocolDiscovery observatoryDiscovery = ProtocolDiscovery.observatory(
+          // If it's an Android device, attaching relies on past log searching
+          // to find the service protocol.
+          await device.getLogReader(includePastLogs: device is AndroidDevice),
+          portForwarder: device.portForwarder,
+          ipv6: ipv6!,
+          devicePort: deviceVmservicePort,
+          hostPort: hostVmservicePort,
+          logger: _logger,
+        );
+        _logger.printStatus('Waiting for a connection from Flutter on ${device.name}...');
         observatoryUri = observatoryDiscovery.uris;
         // Determine ipv6 status from the scanned logs.
         usesIpv6 = observatoryDiscovery.ipv6;
       }
     } else {
-      observatoryUri = Stream<Uri>
-        .fromFuture(
-          buildObservatoryUri(
-            device,
-            debugUri?.host ?? hostname,
-            debugPort ?? debugUri!.port,
-            hostVmservicePort,
-            debugUri?.path,
-          )
-        ).asBroadcastStream();
+      observatoryUri = Stream<Uri>.fromFuture(buildObservatoryUri(
+        device,
+        debugUri?.host ?? hostname,
+        debugPort ?? debugUri!.port,
+        hostVmservicePort,
+        debugUri?.path,
+      )).asBroadcastStream();
     }
 
-    globals.terminal.usesTerminalUi = daemon == null;
+    _terminal.usesTerminalUi = daemon == null;
 
     try {
       int? result;
@@ -331,8 +362,7 @@ known, it can be explicitly provided to attach via the command-line, e.g.
         try {
           app = await daemon.appDomain.launch(
             runner,
-            ({Completer<DebugConnectionInfo>? connectionInfoCompleter,
-              Completer<void>? appStartedCompleter}) {
+            ({Completer<DebugConnectionInfo>? connectionInfoCompleter, Completer<void>? appStartedCompleter}) {
               return runner.attach(
                 connectionInfoCompleter: connectionInfoCompleter,
                 appStartedCompleter: appStartedCompleter,
@@ -343,9 +373,9 @@ known, it can be explicitly provided to attach via the command-line, e.g.
             device,
             null,
             true,
-            globals.fs.currentDirectory,
+            _fileSystem.currentDirectory,
             LaunchMode.attach,
-            globals.logger as AppRunLogger,
+            _logger as AppRunLogger,
           );
         } on Exception catch (error) {
           throwToolExit(error.toString());
@@ -366,10 +396,10 @@ known, it can be explicitly provided to attach via the command-line, e.g.
         unawaited(onAppStart.future.whenComplete(() {
           terminalHandler = TerminalHandler(
             runner,
-            logger: globals.logger,
-            terminal: globals.terminal,
-            signals: globals.signals,
-            processInfo: globals.processInfo,
+            logger: _logger,
+            terminal: _terminal,
+            signals: _signals,
+            processInfo: _processInfo,
             reportReady: boolArgDeprecated('report-ready'),
             pidFile: stringArgDeprecated('pid-file'),
           )
@@ -389,7 +419,7 @@ known, it can be explicitly provided to attach via the command-line, e.g.
         if (runner.exited || !runner.isWaitingForObservatory) {
           break;
         }
-        globals.printStatus('Waiting for a new connection from Flutter on ${device.name}...');
+        _logger.printStatus('Waiting for a new connection from Flutter on ${device.name}...');
       }
     } on RPCError catch (err) {
       if (err.code == RPCErrorCodes.kServiceDisappeared) {
@@ -422,10 +452,10 @@ known, it can be explicitly provided to attach via the command-line, e.g.
       targetModel: TargetModel(stringArgDeprecated('target-model')!),
       buildInfo: buildInfo,
       userIdentifier: userIdentifier,
-      platform: globals.platform,
+      platform: _platform,
     );
     flutterDevice.observatoryUris = observatoryUris;
-    final List<FlutterDevice> flutterDevices =  <FlutterDevice>[flutterDevice];
+    final List<FlutterDevice> flutterDevices = <FlutterDevice>[flutterDevice];
     final DebuggingOptions debuggingOptions = DebuggingOptions.enabled(
       buildInfo,
       enableDds: enableDds,
@@ -434,25 +464,25 @@ known, it can be explicitly provided to attach via the command-line, e.g.
     );
 
     return buildInfo.isDebug
-      ? hotRunnerFactory!.build(
-          flutterDevices,
-          target: targetFile,
-          debuggingOptions: debuggingOptions,
-          packagesFilePath: globalResults!['packages'] as String?,
-          projectRootPath: stringArgDeprecated('project-root'),
-          dillOutputPath: stringArgDeprecated('output-dill'),
-          ipv6: usesIpv6,
-          flutterProject: flutterProject,
-        )
-      : ColdRunner(
-          flutterDevices,
-          target: targetFile,
-          debuggingOptions: debuggingOptions,
-          ipv6: usesIpv6,
-        );
+        ? _hotRunnerFactory.build(
+            flutterDevices,
+            target: targetFile,
+            debuggingOptions: debuggingOptions,
+            packagesFilePath: globalResults!['packages'] as String?,
+            projectRootPath: stringArgDeprecated('project-root'),
+            dillOutputPath: stringArgDeprecated('output-dill'),
+            ipv6: usesIpv6,
+            flutterProject: flutterProject,
+          )
+        : ColdRunner(
+            flutterDevices,
+            target: targetFile,
+            debuggingOptions: debuggingOptions,
+            ipv6: usesIpv6,
+          );
   }
 
-  Future<void> _validateArguments() async { }
+  Future<void> _validateArguments() async {}
 }
 
 class HotRunnerFactory {
@@ -469,16 +499,17 @@ class HotRunnerFactory {
     bool stayResident = true,
     bool ipv6 = false,
     FlutterProject? flutterProject,
-  }) => HotRunner(
-    devices,
-    target: target,
-    debuggingOptions: debuggingOptions,
-    benchmarkMode: benchmarkMode,
-    applicationBinary: applicationBinary,
-    hostIsIde: hostIsIde,
-    projectRootPath: projectRootPath,
-    dillOutputPath: dillOutputPath,
-    stayResident: stayResident,
-    ipv6: ipv6,
-  );
+  }) =>
+      HotRunner(
+        devices,
+        target: target,
+        debuggingOptions: debuggingOptions,
+        benchmarkMode: benchmarkMode,
+        applicationBinary: applicationBinary,
+        hostIsIde: hostIsIde,
+        projectRootPath: projectRootPath,
+        dillOutputPath: dillOutputPath,
+        stayResident: stayResident,
+        ipv6: ipv6,
+      );
 }

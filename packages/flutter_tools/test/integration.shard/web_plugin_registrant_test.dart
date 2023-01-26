@@ -28,8 +28,7 @@ void main() {
   });
 
   setUp(() {
-    tempDir = globals.fs.systemTempDirectory
-        .createTempSync('flutter_tools_generated_plugin_registrant_test.');
+    tempDir = globals.fs.systemTempDirectory.createTempSync('flutter_tools_generated_plugin_registrant_test.');
     projectDir = tempDir.childDirectory('flutter_project');
   });
 
@@ -44,8 +43,7 @@ void main() {
   testUsingContext('generated plugin registrant passes analysis', () async {
     await _createProject(projectDir, <String>[]);
     // We need a dependency so the plugin registrant is not completely empty.
-    await _editPubspecFile(projectDir, _addDependencyEditor('shared_preferences',
-        version: '^2.0.0'));
+    await _editPubspecFile(projectDir, _addDependencyEditor('shared_preferences', version: '^2.0.0'));
     // The plugin registrant is created on build...
     await _buildWebProject(projectDir);
 
@@ -68,26 +66,28 @@ void main() {
     expect(contents, contains('SharedPreferencesPlugin.registerWith(registrar);'));
     expect(contents, contains('registrar.registerMessageHandler();'));
   }, overrides: <Type, Generator>{
-    Pub: () => Pub(
+    Pub: () => Pub.test(
           fileSystem: globals.fs,
           logger: globals.logger,
           processManager: globals.processManager,
           usage: globals.flutterUsage,
           botDetector: globals.botDetector,
           platform: globals.platform,
+          stdio: globals.stdio,
         ),
   });
 
   testUsingContext('generated plugin registrant passes analysis without null safety', () async {
     await _createProject(projectDir, <String>[]);
     // We need a dependency so the plugin registrant is not completely empty.
-    await _editPubspecFile(projectDir,
-      _composeEditors(<PubspecEditor>[
-        _addDependencyEditor('shared_preferences', version: '^2.0.0'),
+    await _editPubspecFile(
+        projectDir,
+        _composeEditors(<PubspecEditor>[
+          _addDependencyEditor('shared_preferences', version: '^2.0.0'),
 
-        // This turns null safety off
-        _setDartSDKVersionEditor('>=2.11.0 <3.0.0'),
-      ]));
+          // This turns null safety off
+          _setDartSDKVersionEditor('>=2.11.0 <3.0.0'),
+        ]));
 
     // The generated main.dart file has a bunch of stuff that is invalid without null safety, so
     // replace it with a no-op dummy main file. We aren't testing it in this scenario anyway.
@@ -125,7 +125,6 @@ void main() {
         ),
   });
 
-
   testUsingContext('(no-op) generated plugin registrant passes analysis', () async {
     await _createProject(projectDir, <String>[]);
     // No dependencies on web plugins this time!
@@ -146,27 +145,25 @@ void main() {
     final String contents = registrant.readAsStringSync();
     expect(contents, contains('void registerPlugins() {}'));
   }, overrides: <Type, Generator>{
-    Pub: () => Pub(
+    Pub: () => Pub.test(
           fileSystem: globals.fs,
           logger: globals.logger,
           processManager: globals.processManager,
           usage: globals.flutterUsage,
           botDetector: globals.botDetector,
           platform: globals.platform,
+          stdio: globals.stdio,
         ),
   });
 
   // See: https://github.com/dart-lang/dart-services/pull/874
   testUsingContext('generated plugin registrant for dartpad is created on pub get', () async {
     await _createProject(projectDir, <String>[]);
-    await _editPubspecFile(projectDir,
-      _addDependencyEditor('shared_preferences', version: '^2.0.0'));
+    await _editPubspecFile(projectDir, _addDependencyEditor('shared_preferences', version: '^2.0.0'));
     // The plugin registrant for dartpad is created on flutter pub get.
     await _doFlutterPubGet(projectDir);
 
-    final File registrant = projectDir
-        .childDirectory('.dart_tool/dartpad')
-        .childFile('web_plugin_registrant.dart');
+    final File registrant = projectDir.childDirectory('.dart_tool/dartpad').childFile('web_plugin_registrant.dart');
 
     // Ensure the file exists, and passes analysis.
     expect(registrant, exists);
@@ -176,22 +173,20 @@ void main() {
     final Directory buildDir = projectDir.childDirectory('.dart_tool/flutter_build');
     expect(buildDir, isNot(exists));
   }, overrides: <Type, Generator>{
-    Pub: () => Pub(
+    Pub: () => Pub.test(
           fileSystem: globals.fs,
           logger: globals.logger,
           processManager: globals.processManager,
           usage: globals.flutterUsage,
           botDetector: globals.botDetector,
           platform: globals.platform,
+          stdio: globals.stdio,
         ),
   });
 
-  testUsingContext(
-      'generated plugin registrant ignores lines longer than 80 chars',
-      () async {
+  testUsingContext('generated plugin registrant ignores lines longer than 80 chars', () async {
     await _createProject(projectDir, <String>[]);
-    await _addAnalysisOptions(
-        projectDir, <String>['lines_longer_than_80_chars']);
+    await _addAnalysisOptions(projectDir, <String>['lines_longer_than_80_chars']);
     await _createProject(tempDir.childDirectory('test_plugin'), <String>[
       '--template=plugin',
       '--platforms=web',
@@ -204,12 +199,11 @@ void main() {
     // file does not fail analysis (this is a regression test - an ignore was
     // added to cover this case).
     await _editPubspecFile(
-      projectDir,
-      _addDependencyEditor(
-        'test_web_plugin_with_a_purposefully_extremely_long_package_name',
-        path: '../test_plugin',
-      )
-    );
+        projectDir,
+        _addDependencyEditor(
+          'test_web_plugin_with_a_purposefully_extremely_long_package_name',
+          path: '../test_plugin',
+        ));
     // The plugin registrant is only created after a build...
     await _buildWebProject(projectDir);
 
@@ -225,13 +219,14 @@ void main() {
     );
     await _analyzeEntity(buildDir.childFile('web_plugin_registrant.dart'));
   }, overrides: <Type, Generator>{
-    Pub: () => Pub(
+    Pub: () => Pub.test(
           fileSystem: globals.fs,
           logger: globals.logger,
           processManager: globals.processManager,
           usage: globals.flutterUsage,
           botDetector: globals.botDetector,
           platform: globals.platform,
+          stdio: globals.stdio,
         ),
   });
 }
@@ -285,8 +280,7 @@ Future<void> _restoreFlutterToolsSnapshot() async {
     ),
   );
 
-  final File snapshotBackup =
-      globals.fs.file('$flutterToolsSnapshotPath.bak');
+  final File snapshotBackup = globals.fs.file('$flutterToolsSnapshotPath.bak');
   if (!snapshotBackup.existsSync()) {
     // No backup to restore.
     return;
@@ -326,10 +320,8 @@ Future<void> _replaceMainFile(Directory projectDir, String fileContents) async {
 }
 
 PubspecEditor _addDependencyEditor(String packageToAdd, {String? version, String? path}) {
-  assert(version != null || path != null,
-      'Need to define a source for the package.');
-  assert(version == null || path == null,
-      'Cannot only load a package from path or from Pub, not both.');
+  assert(version != null || path != null, 'Need to define a source for the package.');
+  assert(version == null || path == null, 'Cannot only load a package from path or from Pub, not both.');
   void editor(List<String> lines) {
     for (int i = 0; i < lines.length; i++) {
       final String line = lines[i];
@@ -342,6 +334,7 @@ PubspecEditor _addDependencyEditor(String packageToAdd, {String? version, String
       }
     }
   }
+
   return editor;
 }
 
@@ -353,11 +346,11 @@ PubspecEditor _setDartSDKVersionEditor(String version) {
         for (i++; i < lines.length; i++) {
           final String innerLine = lines[i];
           final String sdkLine = "  sdk: '$version'";
-          if(innerLine.isNotEmpty && !innerLine.startsWith('  ')) {
+          if (innerLine.isNotEmpty && !innerLine.startsWith('  ')) {
             lines.insert(i, sdkLine);
             break;
           }
-          if(innerLine.startsWith('  sdk:')) {
+          if (innerLine.startsWith('  sdk:')) {
             lines[i] = sdkLine;
             break;
           }
@@ -366,6 +359,7 @@ PubspecEditor _setDartSDKVersionEditor(String version) {
       }
     }
   }
+
   return editor;
 }
 
@@ -375,11 +369,11 @@ PubspecEditor _composeEditors(Iterable<PubspecEditor> editors) {
       editor(lines);
     }
   }
+
   return composedEditor;
 }
 
-Future<void> _addAnalysisOptions(
-    Directory projectDir, List<String> linterRules) async {
+Future<void> _addAnalysisOptions(Directory projectDir, List<String> linterRules) async {
   assert(linterRules.isNotEmpty);
 
   await projectDir.childFile('analysis_options.yaml').writeAsString('''
@@ -440,10 +434,7 @@ Future<void> _runFlutterSnapshot(List<String> flutterCommandArgs, Directory work
     ),
   );
 
-  final List<String> args = <String>[
-    flutterToolsSnapshotPath,
-    ...flutterCommandArgs
-  ];
+  final List<String> args = <String>[flutterToolsSnapshotPath, ...flutterCommandArgs];
 
   final ProcessResult exec = await Process.run(
     globals.artifacts!.getHostArtifact(HostArtifact.engineDartBinary).path,

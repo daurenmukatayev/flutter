@@ -41,7 +41,6 @@ void main() {
             'webview',
             const Size(200.0, 100.0),
             AndroidViewController.kAndroidLayoutDirectionLtr,
-            null,
           ),
         ]),
       );
@@ -85,8 +84,7 @@ void main() {
             'webview',
             const Size(200.0, 100.0),
             AndroidViewController.kAndroidLayoutDirectionLtr,
-            null,
-            fakeView.creationParams,
+            creationParams: fakeView.creationParams,
           ),
         ]),
       );
@@ -150,7 +148,6 @@ void main() {
             'webview',
             const Size(200.0, 100.0),
             AndroidViewController.kAndroidLayoutDirectionLtr,
-            null,
           ),
         ]),
       );
@@ -166,7 +163,6 @@ void main() {
             'webview',
             const Size(100.0, 50.0),
             AndroidViewController.kAndroidLayoutDirectionLtr,
-            null,
           ),
         ]),
       );
@@ -205,7 +201,6 @@ void main() {
             'maps',
             const Size(200.0, 100.0),
             AndroidViewController.kAndroidLayoutDirectionLtr,
-            null,
           ),
         ]),
       );
@@ -272,7 +267,6 @@ void main() {
             'webview',
             const Size(200.0, 100.0),
             AndroidViewController.kAndroidLayoutDirectionLtr,
-            null,
           ),
         ]),
       );
@@ -495,7 +489,6 @@ void main() {
             'maps',
             const Size(200.0, 100.0),
             AndroidViewController.kAndroidLayoutDirectionRtl,
-            null,
           ),
         ]),
       );
@@ -518,7 +511,6 @@ void main() {
             'maps',
             const Size(200.0, 100.0),
             AndroidViewController.kAndroidLayoutDirectionLtr,
-            null,
           ),
         ]),
       );
@@ -549,7 +541,6 @@ void main() {
             'maps',
             const Size(200.0, 100.0),
             AndroidViewController.kAndroidLayoutDirectionRtl,
-            null,
           ),
         ]),
       );
@@ -575,7 +566,6 @@ void main() {
             'maps',
             const Size(200.0, 100.0),
             AndroidViewController.kAndroidLayoutDirectionLtr,
-            null,
           ),
         ]),
       );
@@ -762,7 +752,7 @@ void main() {
             onVerticalDragStart: (DragStartDetails d) {
               verticalDragAcceptedByParent = true;
             },
-            onLongPress: () { },
+            onLongPress: () {},
             child: const SizedBox(
               width: 200.0,
               height: 100.0,
@@ -843,7 +833,7 @@ void main() {
         Align(
           alignment: Alignment.topLeft,
           child: GestureDetector(
-            onVerticalDragStart: (DragStartDetails d) { },
+            onVerticalDragStart: (DragStartDetails d) {},
             child: SizedBox(
               width: 200.0,
               height: 100.0,
@@ -1256,6 +1246,75 @@ void main() {
       );
       await tester.pumpWidget(surface);
       expect(controller.pointTransformer, isNotNull);
+    });
+
+    testWidgets('AndroidViewSurface defaults to texture-based rendering', (WidgetTester tester) async {
+      final AndroidViewSurface surface = AndroidViewSurface(
+        controller: controller,
+        hitTestBehavior: PlatformViewHitTestBehavior.opaque,
+        gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
+      );
+      await tester.pumpWidget(surface);
+
+      expect(
+          find.byWidgetPredicate(
+            (Widget widget) => widget.runtimeType.toString() == '_TextureBasedAndroidViewSurface',
+          ),
+          findsOneWidget);
+    });
+
+    testWidgets('AndroidViewSurface uses view-based rendering when initially required', (WidgetTester tester) async {
+      controller.requiresViewComposition = true;
+      final AndroidViewSurface surface = AndroidViewSurface(
+        controller: controller,
+        hitTestBehavior: PlatformViewHitTestBehavior.opaque,
+        gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
+      );
+      await tester.pumpWidget(surface);
+
+      expect(
+          find.byWidgetPredicate(
+            (Widget widget) => widget.runtimeType.toString() == '_PlatformLayerBasedAndroidViewSurface',
+          ),
+          findsOneWidget);
+    });
+
+    testWidgets('AndroidViewSurface can switch to view-based rendering after creation', (WidgetTester tester) async {
+      final AndroidViewSurface surface = AndroidViewSurface(
+        controller: controller,
+        hitTestBehavior: PlatformViewHitTestBehavior.opaque,
+        gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
+      );
+      await tester.pumpWidget(surface);
+
+      expect(
+          find.byWidgetPredicate(
+            (Widget widget) => widget.runtimeType.toString() == '_TextureBasedAndroidViewSurface',
+          ),
+          findsOneWidget);
+      expect(
+          find.byWidgetPredicate(
+            (Widget widget) => widget.runtimeType.toString() == '_PlatformLayerBasedAndroidViewSurface',
+          ),
+          findsNothing);
+
+      // Simulate a creation-time switch to view composition.
+      controller.requiresViewComposition = true;
+      for (final PlatformViewCreatedCallback callback in controller.createdCallbacks) {
+        callback(controller.viewId);
+      }
+      await tester.pumpWidget(surface);
+
+      expect(
+          find.byWidgetPredicate(
+            (Widget widget) => widget.runtimeType.toString() == '_TextureBasedAndroidViewSurface',
+          ),
+          findsNothing);
+      expect(
+          find.byWidgetPredicate(
+            (Widget widget) => widget.runtimeType.toString() == '_PlatformLayerBasedAndroidViewSurface',
+          ),
+          findsOneWidget);
     });
   });
 
@@ -1787,7 +1846,7 @@ void main() {
             onVerticalDragStart: (DragStartDetails d) {
               verticalDragAcceptedByParent = true;
             },
-            onLongPress: () { },
+            onLongPress: () {},
             child: const SizedBox(
               width: 200.0,
               height: 100.0,
@@ -1866,7 +1925,7 @@ void main() {
         Align(
           alignment: Alignment.topLeft,
           child: GestureDetector(
-            onVerticalDragStart: (DragStartDetails d) { },
+            onVerticalDragStart: (DragStartDetails d) {},
             child: SizedBox(
               width: 200.0,
               height: 100.0,
@@ -2066,14 +2125,11 @@ void main() {
     });
 
     testWidgets('UiKitView sends TextInput.setPlatformViewClient when focused', (WidgetTester tester) async {
-
       final int currentViewId = platformViewsRegistry.getNextPlatformViewId();
       final FakeIosPlatformViewsController viewsController = FakeIosPlatformViewsController();
       viewsController.registerViewType('webview');
 
-      await tester.pumpWidget(
-        const UiKitView(viewType: 'webview', layoutDirection: TextDirection.ltr)
-      );
+      await tester.pumpWidget(const UiKitView(viewType: 'webview', layoutDirection: TextDirection.ltr));
 
       // First frame is before the platform view was created so the render object
       // is not yet in the tree.
@@ -2135,7 +2191,7 @@ void main() {
         find.descendant(
           of: find.byType(UiKitView),
           matching: find.byWidgetPredicate(
-              (Widget widget) => widget.runtimeType.toString() == '_UiKitPlatformView',
+            (Widget widget) => widget.runtimeType.toString() == '_UiKitPlatformView',
           ),
         ),
       );
@@ -2253,7 +2309,7 @@ void main() {
             onVerticalDragStart: (DragStartDetails d) {
               verticalDragAcceptedByParent = true;
             },
-            onLongPress: () { },
+            onLongPress: () {},
             child: SizedBox(
               width: 200.0,
               height: 100.0,
@@ -2324,7 +2380,7 @@ void main() {
         Align(
           alignment: Alignment.topLeft,
           child: GestureDetector(
-            onVerticalDragStart: (DragStartDetails d) { },
+            onVerticalDragStart: (DragStartDetails d) {},
             child: SizedBox(
               width: 200.0,
               height: 100.0,
@@ -2460,29 +2516,29 @@ void main() {
       (WidgetTester tester) async {
         late PlatformViewController controller;
 
-        final Widget widget = Center(child: SizedBox(
-          height: 0,
-          child: PlatformViewLink(
-            viewType: 'webview',
-            onCreatePlatformView: (PlatformViewCreationParams params) {
-              controller = FakeAndroidViewController(params.id, requiresSize: true);
-              controller.create();
-              // This test should be simulating one of the texture-based display
-              // modes, where `create` is a no-op when not provided a size, and
-              // creation is triggered via a later call to setSize, or to `create`
-              // with a size.
-              expect(controller.awaitingCreation, true);
-              return controller;
-            },
-            surfaceFactory: (BuildContext context, PlatformViewController controller) {
-              return PlatformViewSurface(
-                gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
-                controller: controller,
-                hitTestBehavior: PlatformViewHitTestBehavior.opaque,
-              );
-            },
-          )
-        ));
+        final Widget widget = Center(
+            child: SizedBox(
+                height: 0,
+                child: PlatformViewLink(
+                  viewType: 'webview',
+                  onCreatePlatformView: (PlatformViewCreationParams params) {
+                    controller = FakeAndroidViewController(params.id, requiresSize: true);
+                    controller.create();
+                    // This test should be simulating one of the texture-based display
+                    // modes, where `create` is a no-op when not provided a size, and
+                    // creation is triggered via a later call to setSize, or to `create`
+                    // with a size.
+                    expect(controller.awaitingCreation, true);
+                    return controller;
+                  },
+                  surfaceFactory: (BuildContext context, PlatformViewController controller) {
+                    return PlatformViewSurface(
+                      gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
+                      controller: controller,
+                      hitTestBehavior: PlatformViewHitTestBehavior.opaque,
+                    );
+                  },
+                )));
 
         await tester.pumpWidget(widget);
 
@@ -2911,8 +2967,12 @@ void main() {
             width: 600,
             height: 600,
             child: MouseRegion(
-              onEnter: (_) { logs.add('enter1'); },
-              onExit: (_) { logs.add('exit1'); },
+              onEnter: (_) {
+                logs.add('enter1');
+              },
+              onExit: (_) {
+                logs.add('exit1');
+              },
               cursor: SystemMouseCursors.forbidden,
               child: Stack(
                 children: <Widget>[
@@ -2921,8 +2981,12 @@ void main() {
                       width: 400,
                       height: 400,
                       child: MouseRegion(
-                        onEnter: (_) { logs.add('enter2'); },
-                        onExit: (_) { logs.add('exit2'); },
+                        onEnter: (_) {
+                          logs.add('enter2');
+                        },
+                        onExit: (_) {
+                          logs.add('exit2');
+                        },
                         cursor: SystemMouseCursors.text,
                       ),
                     ),
